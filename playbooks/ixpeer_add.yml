@@ -1,0 +1,97 @@
+---
+- name: Add IX peer on Junos with safe commit-confirmed
+  hosts: routers
+  gather_facts: no
+  vars:
+    # Required parameters (prompt via AWX Survey or --extra-vars)
+    group_name: "IX-HKG"
+    peer_ip: "198.51.100.1"
+    peer_asn: 65001
+    description: "IX Peer example"
+    prefix_limit: 100000
+    import_policies: "{{ default_import_policies }}"
+    export_policies: "{{ default_export_policies }}"
+    # Optional: per-family local addresses
+    local_address_v4: "192.0.2.2"
+    local_address_v6: ""
+    md5_key: ""
+
+  tasks:
+    - name: Validate required inputs
+      assert:
+        that:
+          - group_name | length > 0
+          - peer_ip | length > 0
+          - peer_asn | int > 0
+        fail_msg: "Missing required parameters for IX peer add."
+
+    - name: Render Junos 'set' lines
+      ansible.builtin.template:
+        src: "../templates/junos_ixpeer_set.j2"
+        dest: "/tmp/ixpeer_{{ inventory_hostname }}.set"
+        mode: '0600'
+      vars:
+        import_policies: "{{ import_policies }}"
+        export_policies: "{{ export_policies }}"
+
+    - name: Read rendered lines
+      ansible.builtin.slurp:
+        path: "/tmp/ixpeer_{{ inventory_hostname }}.set"
+      register: rendered
+
+    - name: Convert slurped content to list of 'set' lines
+      ansible.builtin.set_fact:
+        set_lines: "{{ (rendered.content | b64decode).splitlines() | select('match', '^set ') | list }}"
+
+    - name: Push candidate config with commit-confirmed
+      junipernetworks.junos.junos_config:
+        lines: "{{ set_lines }}"
+        comment: "AWX ixpeer add (commit-confirmed)"
+        commit: true
+        confirm: "{{ confirm_minutes }}"
+      register: cfg_push
+
+    - name: Wait 15s for BGP to start negotiating
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Poll BGP state (IPv4/IPv6) up to 10 times
+      block:
+        - name: Check BGP neighbor terse for {{ peer_ip }}
+          junipernetworks.junos.junos_command:
+            commands:
+              - "show bgp neighbor {{ peer_ip }} terse"
+          register: bgp_out
+          retries: 10
+          delay: 15
+          until: "'Establ' in (bgp_out.stdout[0] | string)"
+
+        - name: Confirm commit if Established
+          junipernetworks.junos.junos_config:
+            comment: "AWX ixpeer add confirmed"
+            commit: true
+
+        - name: Optional Telegram notify (success)
+          when: telegram_bot_token | length > 0 and telegram_chat_id | length > 0
+          ansible.builtin.uri:
+            url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+            method: POST
+            body_format: json
+            body:
+              chat_id: "{{ telegram_chat_id }}"
+              text: "[AWX] IX peer added and Established on {{ inventory_hostname }}: {{ peer_ip }} (AS{{ peer_asn }})"
+      rescue:
+        - name: Report verification failure (will auto-rollback when confirm timer expires)
+          ansible.builtin.debug:
+            msg: "BGP did not reach Established before timeout; leaving commit-confirmed to auto-rollback."
+
+        - name: Optional Telegram notify (failure)
+          when: telegram_bot_token | length > 0 and telegram_chat_id | length > 0
+          ansible.builtin.uri:
+            url: "https://api.telegram.org/bot{{ telegram_bot_token }}/sendMessage"
+            method: POST
+            body_format: json
+            body:
+              chat_id: "{{ telegram_chat_id }}"
+              text: "[AWX] IX peer add FAILED verification on {{ inventory_hostname }}: {{ peer_ip }} (AS{{ peer_asn }}) — auto-rollback in {{ confirm_minutes }}m"
+          ignore_errors: true

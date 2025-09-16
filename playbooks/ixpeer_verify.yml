@@ -1,0 +1,21 @@
+---
+- name: Verify IX peer status
+  hosts: routers
+  gather_facts: no
+  vars:
+    peer_ip: "198.51.100.1"
+  tasks:
+    - name: Show BGP neighbor terse
+      junipernetworks.junos.junos_command:
+        commands:
+          - "show bgp neighbor {{ peer_ip }} terse"
+      register: bgp
+
+    - name: Mark failure if not Established
+      ansible.builtin.assert:
+        that: "'Establ' in (bgp.stdout[0] | string)"
+        fail_msg: "Peer {{ peer_ip }} not Established"
+
+    - name: Print line
+      ansible.builtin.debug:
+        var: bgp.stdout[0]

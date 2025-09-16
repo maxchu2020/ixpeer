@@ -1,0 +1,15 @@
+---
+# Default IX policies (assume already exist on device). Override per-run if needed.
+default_import_policies: [ "ps_IX-IN" ]
+default_export_policies: [ "ps_IX-OUT" ]
+
+# Whether to configure IPv4/IPv6 families
+family_inet: true
+family_inet6: false
+
+# Commit confirmed minutes for safety
+confirm_minutes: 5
+
+# Telegram notification (optional). Supply via extra_vars or env if used.
+telegram_bot_token: ""
+telegram_chat_id: ""

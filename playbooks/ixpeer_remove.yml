@@ -1,0 +1,37 @@
+---
+- name: Remove IX peer on Junos (safe)
+  hosts: routers
+  gather_facts: no
+  vars:
+    group_name: "IX-HKG"
+    peer_ip: "198.51.100.1"
+  tasks:
+    - name: Build delete lines
+      ansible.builtin.set_fact:
+        del_lines:
+          - "delete protocols bgp group {{ group_name }} neighbor {{ peer_ip }}"
+
+    - name: Commit-confirmed delete
+      junipernetworks.junos.junos_config:
+        lines: "{{ del_lines }}"
+        commit: true
+        confirm: 3
+        comment: "AWX ixpeer remove (commit-confirmed)"
+
+    - name: Verify neighbor is absent (no Established)
+      block:
+        - name: Check neighbor is not Established
+          junipernetworks.junos.junos_command:
+            commands:
+              - "show bgp neighbor {{ peer_ip }} terse | match {{ peer_ip }}"
+          register: bgp_out
+          failed_when: "'Establ' in (bgp_out.stdout[0] | default(''))"
+
+        - name: Confirm final commit
+          junipernetworks.junos.junos_config:
+            commit: true
+            comment: "AWX ixpeer remove confirmed"
+      rescue:
+        - name: Debug (auto-rollback expected)
+          ansible.builtin.debug:
+            msg: "Neighbor still appears Established; will auto-rollback unless confirmed."

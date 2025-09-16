@@ -1,0 +1,36 @@
+{#
+  Render Junos 'set' commands for BGP IX peer
+  Required vars:
+    group_name, peer_ip, peer_asn, description, prefix_limit
+    import_policies (list), export_policies (list)
+    local_address_v4 (optional), local_address_v6 (optional)
+    family_inet (bool), family_inet6 (bool)
+    md5_key (optional)
+#}
+set protocols bgp group {{ group_name }} type external
+{% if family_inet %}
+set protocols bgp group {{ group_name }} family inet unicast
+{% endif %}
+{% if family_inet6 %}
+set protocols bgp group {{ group_name }} family inet6 unicast
+{% endif %}
+{% if local_address_v4 %}
+set protocols bgp group {{ group_name }} local-address {{ local_address_v4 }}
+{% endif %}
+{% if local_address_v6 %}
+set protocols bgp group {{ group_name }} local-address {{ local_address_v6 }}
+{% endif %}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} peer-as {{ peer_asn }}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} description "{{ description }}"
+{% if md5_key %}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} authentication-key "{{ md5_key }}"
+{% endif %}
+{% if import_policies %}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} import [ {% for p in import_policies %}{{ p }} {% endfor %}]
+{% endif %}
+{% if export_policies %}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} export [ {% for p in export_policies %}{{ p }} {% endfor %}]
+{% endif %}
+{% if prefix_limit %}
+set protocols bgp group {{ group_name }} neighbor {{ peer_ip }} prefix-limit maximum {{ prefix_limit }}
+{% endif %}
