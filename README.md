@@ -17,4 +17,4 @@ ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory/hosts.yml playbooks/ixpeer_add.yml \
   -e group_name=IX-HKG -e peer_ip=198.51.100.1 -e peer_asn=65001 \
   -e description="HKGIX Example" -e prefix_limit=100000 \
-  -e local_address_v4=192.0.2.1
+  -e local_address_v4=192.0.2.3
